@@ -489,7 +489,8 @@ const eraOf = (dec) => (dec >= 2020 ? "令和" : dec >= 1990 ? "平成" : dec >=
 
 function renderPyramid(svg) {
   const laws = state.data.laws;
-  const typeOrder = state.data.axes.law_type.groups.map((g) => g.label); // 法令数の多い順
+  // 左端＝希少（法令数が少ない＝古い・特殊）な種別から並べる。左揃えなので左帯に意味が出る。
+  const typeOrder = state.data.axes.law_type.groups.map((g) => g.label).reverse(); // 法令数の少ない順
 
   // 公布年代 × 法令種別で現行法令を集計
   const decMap = new Map();
@@ -515,18 +516,17 @@ function renderPyramid(svg) {
   renderPyramidLegend(typeTotals, grand);
 
   const area = chartArea();
-  const w = area.w, h = area.h, topM = 6, leftM = 92, rightM = 56;
+  const w = area.w, h = area.h, topM = 6, leftM = 110, rightM = 56;
   svg.attr("width", w).attr("height", h);
   const plotW = w - leftM - rightM;
-  const midX = leftM + plotW / 2;
   const rowH = (h - topM) / decades.length;
   const barH = Math.max(2, rowH * 0.78);
   const scale = plotW / maxTotal; // 件数→px
   const labFont = clamp(rowH * 0.46, 9, 12);
 
-  // 中央線
+  // 左端の基準線
   svg.append("line").attr("class", "pyr-mid")
-    .attr("x1", midX).attr("x2", midX).attr("y1", topM).attr("y2", topM + decades.length * rowH);
+    .attr("x1", leftM).attr("x2", leftM).attr("y1", topM).attr("y2", topM + decades.length * rowH);
 
   decades.forEach((dec, i) => {
     const yTop = topM + i * rowH;
@@ -540,8 +540,8 @@ function renderPyramid(svg) {
       .attr("text-anchor", "end").style("font-size", labFont + "px")
       .text(showEra ? `${eraOf(dec)}・${dec}年代` : `${dec}年代`);
 
-    // 中央そろえの積み上げバー（人口ピラミッド風の対称シルエット）
-    let x = midX - (total * scale) / 2;
+    // 左揃えの積み上げバー（左端＝希少な種別）
+    let x = leftM;
     for (const t of typeOrder) {
       const c = o[t] || 0; if (!c) continue;
       const segW = c * scale;
@@ -556,15 +556,16 @@ function renderPyramid(svg) {
       x += segW;
     }
     if (total) svg.append("text").attr("class", "pyr-total")
-      .attr("x", midX + (total * scale) / 2 + 4).attr("y", yTop + rowH / 2 + 3)
+      .attr("x", leftM + total * scale + 4).attr("y", yTop + rowH / 2 + 3)
       .text(total.toLocaleString());
   });
 }
 
 function renderPyramidLegend(typeTotals, grand) {
   const box = el("legend");
-  let html = `<span class="title">凡例</span><span style="color:var(--muted);font-size:12px">現行法令を公布年代別に集計（上ほど古い）／数字は現存累計／バーをクリックで一覧</span>`;
-  for (const g of state.data.axes.law_type.groups) {
+  let html = `<span class="title">凡例</span><span style="color:var(--muted);font-size:12px">現行法令を公布年代別に集計（上ほど古い・左ほど希少な種別）／数字は現存累計／バーをクリックで一覧</span>`;
+  // バーの並び（希少→多数, 左→右）に合わせて凡例も並べる
+  for (const g of [...state.data.axes.law_type.groups].reverse()) {
     const n = typeTotals[g.label] || 0; if (!n) continue;
     html += `<span class="item lt"><span class="sw" style="background:${typeColor[g.label]}"></span>${g.label} ${n.toLocaleString()}</span>`;
   }
