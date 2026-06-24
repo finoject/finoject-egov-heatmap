@@ -121,7 +121,7 @@
     <div class="seg" id="modeSeg">
       <button data-mode="grid" class="active">経年グリッド</button>
       <button data-mode="treemap">累計ツリーマップ</button>
-      <button data-mode="pyramid">法令ピラミッド</button>
+      <button data-mode="dist">公布年別度数分布</button>
     </div>
   </div>
   <div class="ctl">
@@ -170,7 +170,7 @@ const state = {
   data: null, axis: "law_type", mode: "grid", yearFrom: null, yearTo: null, search: "", selected: null,
 };
 const AXIS_LABELS = { law_type: "法令種別", category: "事項別分類", ministry: "所管府省" };
-// 法令ピラミッド用: 法令種別ごとのカテゴリ色 (initControlsで法令種別グループ順に割当)
+// 公布年別度数分布用: 法令種別ごとのカテゴリ色 (initControlsで法令種別グループ順に割当)
 const TYPE_PALETTE = ["#2e5090", "#3a8fb7", "#5aa897", "#c9a24b", "#b0653f", "#7a3b8f", "#8c6aa8", "#b08968", "#9aa7b1"];
 const typeColor = {};
 const el = (id) => document.getElementById(id);
@@ -335,15 +335,15 @@ function render() {
   if (!state.data) return;
   const svg = d3.select("#chart");
   svg.selectAll("*").remove();
-  const pyr = state.mode === "pyramid";
-  // ピラミッドは公布年代×種別の集計のため、軸/年レンジは対象外（無効化して誤解を防ぐ）
-  el("axisSel").disabled = pyr;
-  el("yearFrom").disabled = pyr;
-  el("yearTo").disabled = pyr;
+  const dist = state.mode === "dist";
+  // 公布年別度数分布は法令種別固定（軸セレクタは無効）。年レンジは3モード共通で有効。
+  el("axisSel").disabled = dist;
+  el("yearFrom").disabled = false;
+  el("yearTo").disabled = false;
   if (state.mode === "grid") renderGrid(svg);
   else if (state.mode === "treemap") renderTreemap(svg);
-  else renderPyramid(svg);
-  if (state.search && !state.selected && !pyr) showSearchResults();
+  else renderDist(svg);
+  if (state.search && !state.selected && !dist) showSearchResults();
 }
 
 // 検索: 一致法令を右パネルに直接表示
@@ -392,9 +392,9 @@ function renderGrid(svg) {
   svg.attr("width", w).attr("height", h);
   const gridBottom = padTop + cells.length * rowH;
 
-  // 元号の境目に区切り線＋元号名（明治／大正／昭和／平成／令和）
+  // 元号の境目＋表示先頭に区切り線＋元号名（明治／大正／昭和／平成／令和）
   periods.forEach((p, i) => {
-    if (!p.eraStart) return;
+    if (!p.eraStart && i !== 0) return;
     const x = labelW + i * colW;
     svg.append("line").attr("class", "gridsep")
       .attr("x1", x).attr("x2", x).attr("y1", 16).attr("y2", gridBottom);
@@ -493,93 +493,101 @@ function renderTreemap(svg) {
     });
 }
 
-/* ---------- 法令ピラミッド（現行法令の公布年代分布） ---------- */
-const decadeOf = (dateStr) => {
-  if (!dateStr) return null;
-  const y = parseInt(String(dateStr).slice(0, 4), 10);
-  return Number.isFinite(y) ? Math.floor(y / 10) * 10 : null;
+/* ---------- 公布年別度数分布（現行法令を公布年5年区切りで種別積み上げ） ---------- */
+// 公布年→期間インデックス（PERIODS と同じ5年区切り・1872起点）
+const periodIndexOf = (year) => {
+  if (year == null) return -1;
+  const i = Math.floor((year - PERIODS[0].start) / PERIOD_SIZE);
+  return i < 0 ? 0 : i >= PERIODS.length ? PERIODS.length - 1 : i;
 };
-const eraOf = (dec) => (dec >= 2020 ? "令和" : dec >= 1990 ? "平成" : dec >= 1930 ? "昭和" : dec >= 1910 ? "大正" : "明治");
 
-function renderPyramid(svg) {
-  const laws = state.data.laws;
-  // 左端＝希少（法令数が少ない＝古い・特殊）な種別から並べる。左揃えなので左帯に意味が出る。
-  const typeOrder = state.data.axes.law_type.groups.map((g) => g.label).reverse(); // 法令数の少ない順
-
-  // 公布年代 × 法令種別で現行法令を集計
-  const decMap = new Map();
-  let minDec = Infinity, maxDec = -Infinity;
-  for (const l of laws) {
-    const dec = decadeOf(l.date);
-    if (dec == null) continue;
-    minDec = Math.min(minDec, dec); maxDec = Math.max(maxDec, dec);
-    if (!decMap.has(dec)) decMap.set(dec, {});
-    const o = decMap.get(dec);
+// 期間×種別の公布数を一度だけ集計（全期間ぶん）
+function promulgationCounts() {
+  const map = PERIODS.map(() => ({}));
+  for (const l of state.data.laws) {
+    const y = l.date ? parseInt(String(l.date).slice(0, 4), 10) : null;
+    if (!Number.isFinite(y)) continue;
+    const o = map[periodIndexOf(y)];
     const t = l.groups.law_type || "不明";
     o[t] = (o[t] || 0) + 1;
   }
-  if (!isFinite(minDec)) { renderPyramidLegend({}, 0); return; }
-  const decades = [];
-  for (let d = minDec; d <= maxDec; d += 10) decades.push(d);
-  const totals = decades.map((d) => typeOrder.reduce((s, t) => s + ((decMap.get(d) || {})[t] || 0), 0));
-  const maxTotal = Math.max(1, ...totals);
+  return map; // index は PERIODS と対応
+}
 
-  // 凡例用の種別別累計＋総数（バーと一致させる）
-  const typeTotals = {}; let grand = 0;
-  for (const d of decades) { const o = decMap.get(d) || {}; for (const t of typeOrder) if (o[t]) { typeTotals[t] = (typeTotals[t] || 0) + o[t]; grand += o[t]; } }
-  renderPyramidLegend(typeTotals, grand);
+function renderDist(svg) {
+  const periods = periodsInRange();
+  // 下＝希少（法令数少）／上＝多数（政令・府省令）。積み上げは下から希少順。
+  const stackOrder = state.data.axes.law_type.groups.map((g) => g.label).reverse(); // 少→多
+  const counts = promulgationCounts();
+  const idxOf = (p) => PERIODS.indexOf(p);
+
+  // 表示範囲の最大列合計＋凡例用の種別合計
+  let maxColTotal = 1; const typeTotals = {}; let grand = 0;
+  for (const p of periods) {
+    const o = counts[idxOf(p)];
+    let colTotal = 0;
+    for (const t of stackOrder) { const n = o[t] || 0; if (n) { colTotal += n; typeTotals[t] = (typeTotals[t] || 0) + n; grand += n; } }
+    if (colTotal > maxColTotal) maxColTotal = colTotal;
+  }
+  renderDistLegend(typeTotals, grand);
 
   const area = chartArea();
-  const w = area.w, h = area.h, topM = 6, leftM = 110, rightM = 56;
+  const w = area.w, h = area.h;
+  const topPad = 18, bottomAxis = 46, leftAxis = 52;
+  const plotTop = topPad, plotBottom = h - bottomAxis, plotH = plotBottom - plotTop;
+  const colW = (w - leftAxis) / periods.length;
   svg.attr("width", w).attr("height", h);
-  const plotW = w - leftM - rightM;
-  const rowH = (h - topM) / decades.length;
-  const barH = Math.max(2, rowH * 0.78);
-  const scale = plotW / maxTotal; // 件数→px
-  const labFont = clamp(rowH * 0.46, 9, 12);
+  const xOf = (i) => leftAxis + i * colW;
+  const y = d3.scaleLinear().domain([0, maxColTotal]).nice().range([plotBottom, plotTop]);
 
-  // 左端の基準線
-  svg.append("line").attr("class", "pyr-mid")
-    .attr("x1", leftM).attr("x2", leftM).attr("y1", topM).attr("y2", topM + decades.length * rowH);
+  // Y軸（公布数）グリッド＋目盛
+  for (const tv of y.ticks(5)) {
+    svg.append("line").attr("class", "gridsep").attr("x1", leftAxis).attr("x2", w).attr("y1", y(tv)).attr("y2", y(tv)).style("opacity", tv === 0 ? 1 : 0.5);
+    svg.append("text").attr("class", "pyr-total").attr("x", leftAxis - 6).attr("y", y(tv) + 3).attr("text-anchor", "end").text(tv.toLocaleString());
+  }
+  svg.append("text").attr("class", "pyr-total").attr("x", leftAxis - 6).attr("y", plotTop - 6).attr("text-anchor", "end").text("公布数");
 
-  decades.forEach((dec, i) => {
-    const yTop = topM + i * rowH;
-    const o = decMap.get(dec) || {};
-    const total = totals[i];
+  // 元号バンド（境目＋表示先頭に区切り線＋元号名）
+  periods.forEach((p, i) => {
+    if (!p.eraStart && i !== 0) return;
+    const x = xOf(i);
+    svg.append("line").attr("class", "gridsep").attr("x1", x).attr("x2", x).attr("y1", plotTop - 2).attr("y2", plotBottom + 4);
+    svg.append("text").attr("class", "pyr-era").attr("x", x + 3).attr("y", plotTop + 10).style("font-size", "11px").text(p.era);
+  });
 
-    // 年代ラベル（元号が変わる最初の年代に元号を付す）
-    const showEra = i === 0 || eraOf(dec) !== eraOf(decades[i - 1]);
-    svg.append("text").attr("class", "pyr-lab" + (showEra ? " pyr-era" : ""))
-      .attr("x", leftM - 8).attr("y", yTop + rowH / 2 + labFont / 2 - 1)
-      .attr("text-anchor", "end").style("font-size", labFont + "px")
-      .text(showEra ? `${eraOf(dec)}・${dec}年代` : `${dec}年代`);
+  // 期間ラベル（開始年）を下軸に回転表示
+  const labStep = colW < 22 ? 2 : 1;
+  periods.forEach((p, i) => {
+    if (!(labStep === 1 || p.eraStart || i % labStep === 0)) return;
+    svg.append("text").attr("class", "yearlab" + (p.eraStart ? " major" : ""))
+      .attr("transform", `translate(${xOf(i) + colW / 2 + 4},${plotBottom + 10}) rotate(-55)`)
+      .attr("text-anchor", "start").text(p.start);
+  });
 
-    // 左揃えの積み上げバー（左端＝希少な種別）
-    let x = leftM;
-    for (const t of typeOrder) {
-      const c = o[t] || 0; if (!c) continue;
-      const segW = c * scale;
+  // 列ごとに下→上へ積み上げ（希少→多数）
+  periods.forEach((p, i) => {
+    const o = counts[idxOf(p)];
+    let cum = 0;
+    for (const t of stackOrder) {
+      const n = o[t] || 0; if (!n) continue;
+      const yTop = y(cum + n), yBot = y(cum);
       svg.append("rect").attr("class", "pyr-seg")
-        .attr("x", x).attr("y", yTop + (rowH - barH) / 2)
-        .attr("width", Math.max(0.6, segW)).attr("height", barH)
-        .attr("fill", typeColor[t] || "#9aa7b1")
+        .attr("x", xOf(i)).attr("y", yTop).attr("width", Math.max(0.6, colW))
+        .attr("height", Math.max(0.6, yBot - yTop)).attr("fill", typeColor[t] || "#9aa7b1")
         .on("mousemove", (ev) => showTip(ev,
-          `<b>${eraOf(dec)}・${dec}年代</b> ／ ${t}<br>現存 <b>${c.toLocaleString()}</b> 件<br>年代計 ${total.toLocaleString()} 件`))
+          `<b>${p.start}〜${p.end}年（${p.era}）</b> ／ ${t}<br>この期間に公布 <b>${n.toLocaleString()}</b> 件`))
         .on("mouseleave", hideTip)
-        .on("click", () => selectPyramid(dec, t));
-      x += segW;
+        .on("click", () => selectDist(p, t));
+      cum += n;
     }
-    if (total) svg.append("text").attr("class", "pyr-total")
-      .attr("x", leftM + total * scale + 4).attr("y", yTop + rowH / 2 + 3)
-      .text(total.toLocaleString());
   });
 }
 
-function renderPyramidLegend(typeTotals, grand) {
+function renderDistLegend(typeTotals, grand) {
   const box = el("legend");
-  let html = `<span class="title">凡例</span><span style="color:var(--muted);font-size:12px">現行法令を公布年代別に集計（上ほど古い・左ほど希少な種別）／数字は現存累計／バーをクリックで一覧</span>`;
-  // バーの並び（希少→多数, 左→右）に合わせて凡例も並べる
-  for (const g of [...state.data.axes.law_type.groups].reverse()) {
+  let html = `<span class="title">凡例</span><span style="color:var(--muted);font-size:12px">現行法令を公布年（5年区切り）で度数分布／下＝希少な種別・上＝多数／棒をクリックで一覧</span>`;
+  // 積み上げ（下＝希少→上＝多数）に合わせ、凡例は多数→希少で上から読める順に
+  for (const g of state.data.axes.law_type.groups) {
     const n = typeTotals[g.label] || 0; if (!n) continue;
     html += `<span class="item lt"><span class="sw" style="background:${typeColor[g.label]}"></span>${g.label} ${n.toLocaleString()}</span>`;
   }
@@ -587,16 +595,20 @@ function renderPyramidLegend(typeTotals, grand) {
   box.innerHTML = html;
 }
 
-function selectPyramid(dec, typeLabel) {
+function selectDist(period, typeLabel) {
   state.selected = null;
+  const inP = (l) => {
+    const y = l.date ? parseInt(String(l.date).slice(0, 4), 10) : null;
+    return Number.isFinite(y) && y >= period.start && y <= period.end;
+  };
   const list = state.data.laws
-    .filter((l) => (l.groups.law_type || "不明") === typeLabel && decadeOf(l.date) === dec)
+    .filter((l) => (l.groups.law_type || "不明") === typeLabel && inP(l))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   el("panel").classList.add("open");
-  el("panelTitle").textContent = `${eraOf(dec)}・${dec}年代 ／ ${typeLabel}`;
-  el("panelSub").textContent = `現存 ${list.length.toLocaleString()} 件（公布年が古い順）`;
+  el("panelTitle").textContent = `${period.start}〜${period.end}年（${period.era}）／ ${typeLabel}`;
+  el("panelSub").textContent = `この期間に公布され現存 ${list.length.toLocaleString()} 件（公布が古い順）`;
   const LIMIT = 100;
-  let html = `<section><h3>この年代に公布され今も有効な${typeLabel}</h3>`;
+  let html = `<section><h3>この期間に公布され今も有効な${typeLabel}</h3>`;
   html += list.slice(0, LIMIT).map((l) =>
     `<div class="law"><div class="cnt" style="min-width:46px">${String(l.date || "").slice(0, 4)}</div>
      <div class="nm"><a href="${EGOV_LAW_URL(l.id)}" target="_blank" rel="noopener">${escapeHtml(l.title)}</a>
