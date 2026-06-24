@@ -44,7 +44,8 @@
   .seg button + button { border-left: 1px solid var(--line); }
 
   main { flex: 1; display: flex; min-height: 0; }
-  #stage { flex: 1; overflow: auto; padding: 16px; position: relative; }
+  #stage { flex: 1; overflow: hidden; padding: 16px; position: relative; min-width: 0; }
+  #chart { display: block; }
   #legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; }
   #legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   #legend .sw { width: 18px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,.08); }
@@ -153,8 +154,9 @@
 
 <script>
 const EGOV_LAW_URL = (id) => `https://laws.e-gov.go.jp/law/${id}`;
-// 単一色相ブルーの分位ランプ (薄→濃, 濃いほど高頻度)。0回は別扱い(無彩色)。
-const RAMP = ["#dbe3f0", "#b3c2e0", "#8aa0cf", "#6280bf", "#3f63ad", "#2e5090"];
+// 寒色→暖色のヒートマップ分位ランプ (少=青, 多=赤)。0回は別扱い(無彩色)。
+// RdYlBu系を低→高で青→赤に。淡い黄白の中間は避け、寒暖の対比を明確にする。
+const RAMP = ["#4575b4", "#74add1", "#abd9e9", "#fdae61", "#f46d43", "#d73027"];
 
 const state = {
   data: null, axis: "law_type", mode: "grid", yearFrom: null, yearTo: null, search: "", selected: null,
@@ -238,6 +240,22 @@ function initControls() {
 const yearsInRange = () => state.data.years.filter((y) => y >= state.yearFrom && y <= state.yearTo);
 const sumInRange = (byYear) => yearsInRange().reduce((s, y) => s + (byYear[y] || byYear[String(y)] || 0), 0);
 const cellYearVal = (cell, y) => cell.by_year[y] || cell.by_year[String(y)] || 0;
+
+// 描画に使える領域 (ウィンドウ - パディング - 凡例)。グリッド/ツリーマップを縦横フィットさせる。
+function chartArea() {
+  const stage = el("stage");
+  const cs = getComputedStyle(stage);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const lg = el("legend");
+  const lcs = getComputedStyle(lg);
+  const legendH = (lg.offsetHeight || 0) + parseFloat(lcs.marginTop) + parseFloat(lcs.marginBottom);
+  return {
+    w: Math.max(320, stage.clientWidth - padX),
+    h: Math.max(220, stage.clientHeight - padY - legendH - 6),
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // 現在の軸の集計セル群
 const groupsOf = () => state.data.axes[state.axis].groups;
@@ -323,28 +341,34 @@ function renderGrid(svg) {
   const years = yearsInRange();
   const match = searchMatches();
 
-  const labelW = 96, cell = 26, padTop = 22, rowH = 26;
-  const w = labelW + years.length * cell + 12;
-  const h = padTop + cells.length * rowH + 6;
-  svg.attr("width", w).attr("height", h);
-
   // スケール: 全セル×全年(範囲内)の値
   const vals = [];
   cells.forEach((c) => years.forEach((y) => vals.push(cellYearVal(c, y))));
   const scale = buildScale(vals);
   renderLegend(scale);
 
-  // 5年区切りの縦ガイド線（西暦末尾0/5の左端）。Bloomberg的に時間の節目を読みやすく。
+  // ウィンドウ縦横にフィット (凡例ぶんを除いた領域をグリッドで埋める)
+  const padTop = 22;
+  const area = chartArea();
+  const labelW = clamp(area.w * 0.16, 70, 120);
+  const cellW = (area.w - labelW) / years.length;
+  const rowH = (area.h - padTop) / cells.length;
+  const w = area.w, h = area.h;
+  const labFont = clamp(rowH * 0.5, 9, 13);
+  const gap = rowH > 20 ? 2 : rowH > 12 ? 1 : 0; // セル間の白縁 (詰まったら無くす)
+  svg.attr("width", w).attr("height", h);
+
+  // 5年区切りの縦ガイド線（西暦末尾0/5の左端）
   svg.selectAll("line.gridsep").data(years.filter((y) => y % 5 === 0)).enter().append("line")
     .attr("class", "gridsep")
-    .attr("x1", (y) => labelW + years.indexOf(y) * cell).attr("x2", (y) => labelW + years.indexOf(y) * cell)
+    .attr("x1", (y) => labelW + years.indexOf(y) * cellW).attr("x2", (y) => labelW + years.indexOf(y) * cellW)
     .attr("y1", padTop - 4).attr("y2", padTop + cells.length * rowH);
 
-  // 年ラベル (狭いときは末尾0/5のみ表示し、節目を強調)
-  const step = years.length > 16 ? 5 : 1;
+  // 年ラベル (列が狭いときは末尾0/5のみ表示し、節目を強調)
+  const step = cellW < 26 ? 5 : 1;
   svg.selectAll("text.yearlab").data(years).enter().append("text")
     .attr("class", (d) => "yearlab" + (d % 5 === 0 ? " major" : ""))
-    .attr("x", (d, i) => labelW + i * cell + cell / 2)
+    .attr("x", (d, i) => labelW + i * cellW + cellW / 2)
     .attr("y", padTop - 8).attr("text-anchor", "middle")
     .text((d) => (step === 1 || d % 5 === 0 ? d : ""));
 
@@ -354,8 +378,9 @@ function renderGrid(svg) {
 
   rows.append("text").attr("class", "rowlab")
     .attr("data-group", (d) => d.group)
-    .attr("x", labelW - 8).attr("y", rowH / 2 + 4).attr("text-anchor", "end")
-    .text((d) => `${d.label}`);
+    .attr("x", labelW - 8).attr("y", rowH / 2 + labFont / 2 - 1).attr("text-anchor", "end")
+    .style("font-size", labFont + "px")
+    .text((d) => d.label);
 
   const isSel = (c, y) => state.selected && state.selected.group === c.group && state.selected.year === y;
   rows.each(function (c) {
@@ -364,8 +389,9 @@ function renderGrid(svg) {
     g.selectAll("rect").data(years).enter().append("rect")
       .attr("class", (y) => "cell" + (dimRow ? " dim" : "")
         + (match && match.groups.has(c.group) ? " hit" : "") + (isSel(c, y) ? " sel" : ""))
-      .attr("x", (y, i) => labelW + i * cell).attr("y", 2)
-      .attr("width", cell - 0).attr("height", rowH - 4)
+      .attr("x", (y, i) => labelW + i * cellW).attr("y", gap)
+      .attr("width", cellW).attr("height", Math.max(1, rowH - gap * 2))
+      .style("stroke-width", gap ? "1.5px" : "0.5px")
       .attr("fill", (y) => scale.color(cellYearVal(c, y)))
       .on("mousemove", (ev, y) => {
         svg.selectAll("text.rowlab").classed("cur", (d) => d.group === c.group);
@@ -389,9 +415,8 @@ function renderTreemap(svg) {
   const scale = buildScale(totals);
   renderLegend(scale);
 
-  const stage = el("stage");
-  const w = Math.max(420, stage.clientWidth - 32);
-  const h = Math.max(360, stage.clientHeight - 120);
+  const area = chartArea();
+  const w = area.w, h = area.h;
   svg.attr("width", w).attr("height", h);
 
   const root = d3.hierarchy({ children: cells })
@@ -418,7 +443,7 @@ function renderTreemap(svg) {
 
   t.append("text").attr("x", 6).attr("y", 16)
     .style("font-size", "12px").style("font-weight", "600")
-    .style("fill", (d) => (sumInRange(d.data.by_year) > (scale.quantile ? scale.quantile.quantiles()[2] || 1e9 : 1e9) ? "#fff" : "var(--ink)"))
+    .style("fill", (d) => (sumInRange(d.data.by_year) > (scale.quantile ? (scale.quantile.quantiles()[3] ?? 1e9) : 1e9) ? "#fff" : "var(--ink)"))
     .each(function (d) {
       const wpx = d.x1 - d.x0, hpx = d.y1 - d.y0;
       const sel = d3.select(this);
@@ -490,6 +515,13 @@ function selectCell(cellData, year) {
   el("panelBody").innerHTML = html;
   render(); // ハイライト更新
 }
+
+// ウィンドウのリサイズに追従 (連続発火を間引き)
+let _rz;
+window.addEventListener("resize", () => {
+  clearTimeout(_rz);
+  _rz = setTimeout(() => { if (state.data) render(); }, 120);
+});
 
 load();
 </script>
