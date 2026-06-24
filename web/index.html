@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>e-Gov 改正頻度ヒートマップ — 法令種別</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  :root {
+    --ink: #32414b;          /* base text (finoject Deep Slate Gray) */
+    --accent: #2e5090;       /* finoject YInMn Blue */
+    --line: #d9dee3;
+    --panel: #f6f8fa;
+    --muted: #6b7884;
+    --zero: #eceff1;         /* 改正0回 = 無彩色 */
+    --bg: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+    color: var(--ink); background: var(--bg); font-size: 14px;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    border-bottom: 1px solid var(--line); padding: 10px 16px;
+    display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center;
+  }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  header h1 .sub { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .ctl { display: flex; align-items: center; gap: 6px; }
+  .ctl label { color: var(--muted); font-size: 12px; }
+  select, input[type=search] {
+    font: inherit; font-size: 13px; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: #fff;
+  }
+  input[type=search] { width: 200px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; border: 0; background: #fff; color: var(--ink);
+    padding: 5px 12px; cursor: pointer;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .seg button + button { border-left: 1px solid var(--line); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage { flex: 1; overflow: auto; padding: 16px; position: relative; }
+  #legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; }
+  #legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  #legend .sw { width: 18px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,.08); }
+  #legend .title { color: var(--ink); font-weight: 600; }
+
+  aside {
+    width: 360px; border-left: 1px solid var(--line); background: var(--panel);
+    overflow: auto; padding: 0; display: none; flex-direction: column;
+  }
+  aside.open { display: flex; }
+  aside .head { padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+  aside .head .t { font-weight: 600; font-size: 14px; }
+  aside .head .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  aside .close { float: right; cursor: pointer; color: var(--muted); border: 0; background: none; font-size: 18px; line-height: 1; }
+  aside section { padding: 10px 16px 16px; }
+  aside h3 { font-size: 12px; text-transform: none; color: var(--accent); margin: 6px 0 8px; letter-spacing: .03em; }
+  .law { padding: 7px 0; border-bottom: 1px solid #e7ebef; display: flex; gap: 8px; align-items: baseline; }
+  .law:last-child { border-bottom: 0; }
+  .law .cnt { flex: 0 0 auto; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums;
+    color: var(--accent); font-weight: 600; }
+  .law .nm { flex: 1; line-height: 1.35; }
+  .law .nm a { color: var(--ink); text-decoration: none; }
+  .law .nm a:hover { text-decoration: underline; color: var(--accent); }
+  .law .meta { color: var(--muted); font-size: 11px; }
+  .more { color: var(--muted); font-size: 12px; padding-top: 8px; }
+
+  text.rowlab { font-size: 12px; fill: var(--ink); }
+  text.yearlab { font-size: 10px; fill: var(--muted); }
+  text.yearlab.major { fill: var(--ink); font-weight: 600; }
+  text.rowlab.cur { fill: var(--accent); font-weight: 700; }
+  line.gridsep { stroke: var(--line); stroke-width: 1px; shape-rendering: crispEdges; }
+  rect.cell { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
+  rect.cell.dim { opacity: .15; }
+  rect.cell.hit { stroke: var(--accent); stroke-width: 2.5px; }
+  rect.cell.sel { stroke: var(--ink); stroke-width: 3px; }
+  .tile text { pointer-events: none; }
+  .tile rect { cursor: pointer; stroke: #fff; stroke-width: 1.5px; }
+  .tile.dim { opacity: .18; }
+  .tile.hit rect { stroke: var(--accent); stroke-width: 2.5px; }
+  .tile.sel rect { stroke: var(--ink); stroke-width: 3px; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; background: #1f2933; color: #fff; padding: 7px 10px;
+    border-radius: 6px; font-size: 12px; line-height: 1.5; opacity: 0; transition: opacity .08s; z-index: 50;
+    max-width: 280px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  }
+  #tooltip b { font-weight: 600; }
+
+  #overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; color: var(--muted); background: rgba(255,255,255,.85);
+  }
+  #overlay.hidden { display: none; }
+  .spinner { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { border-top: 1px solid var(--line); padding: 8px 16px; font-size: 11px; color: var(--muted); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>e-Gov 改正頻度ヒートマップ<span class="sub" id="hsub">法令種別 × 改正頻度（公布ベース）</span></h1>
+  <div class="ctl">
+    <div class="seg" id="modeSeg">
+      <button data-mode="grid" class="active">経年グリッド</button>
+      <button data-mode="treemap">累計ツリーマップ</button>
+    </div>
+  </div>
+  <div class="ctl">
+    <label>分野軸</label>
+    <select id="axisSel"><option value="law_type">法令種別</option></select>
+  </div>
+  <div class="ctl">
+    <label>年</label>
+    <select id="yearFrom"></select><span style="color:var(--muted)">–</span><select id="yearTo"></select>
+  </div>
+  <div class="ctl" style="margin-left:auto">
+    <input type="search" id="search" placeholder="法令名で検索…" autocomplete="off" />
+  </div>
+</header>
+
+<main>
+  <div id="stage">
+    <div id="legend"></div>
+    <svg id="chart"></svg>
+    <div id="overlay"><div class="spinner"></div><div id="ovmsg">データ読み込み中…</div></div>
+  </div>
+  <aside id="panel">
+    <div class="head">
+      <button class="close" id="panelClose" title="閉じる">×</button>
+      <div class="t" id="panelTitle"></div>
+      <div class="s" id="panelSub"></div>
+    </div>
+    <div id="panelBody"></div>
+  </aside>
+</main>
+
+<footer>
+  出典: <span id="srcText">e-Gov 法令API v2</span>（デジタル庁）を加工して作成。政府標準利用規約（第2.0版）に基づく。
+  <span id="genInfo"></span> ／ 本ビューアは事前生成した集計JSONを表示します（実行時にAPIへはアクセスしません）。
+</footer>
+
+<div id="tooltip"></div>
+
+<script>
+const EGOV_LAW_URL = (id) => `https://laws.e-gov.go.jp/law/${id}`;
+// 単一色相ブルーの分位ランプ (薄→濃, 濃いほど高頻度)。0回は別扱い(無彩色)。
+const RAMP = ["#dbe3f0", "#b3c2e0", "#8aa0cf", "#6280bf", "#3f63ad", "#2e5090"];
+
+const state = {
+  data: null, axis: "law_type", mode: "grid", yearFrom: null, yearTo: null, search: "", selected: null,
+};
+const AXIS_LABELS = { law_type: "法令種別", category: "事項別分類", ministry: "所管府省" };
+const el = (id) => document.getElementById(id);
+const tip = el("tooltip");
+
+function showOverlay(msg, spin = true) {
+  el("ovmsg").textContent = msg;
+  el("overlay").querySelector(".spinner").style.display = spin ? "" : "none";
+  el("overlay").classList.remove("hidden");
+}
+function hideOverlay() { el("overlay").classList.add("hidden"); }
+
+async function load() {
+  try {
+    showOverlay("データ読み込み中…");
+    const res = await fetch("../data/heatmap.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.axes || Object.keys(data.axes).length === 0) {
+      showOverlay("表示できるデータがありません（該当0件）。", false);
+      return;
+    }
+    state.data = data;
+    state.axis = data.default_axis && data.axes[data.default_axis] ? data.default_axis : Object.keys(data.axes)[0];
+    initControls();
+    hideOverlay();
+    render();
+  } catch (e) {
+    showOverlay(`データの読み込みに失敗しました: ${e.message}`, false);
+    console.error(e);
+  }
+}
+
+function initControls() {
+  const years = state.data.years;
+  state.yearTo = years[years.length - 1];
+  // 既定は直近12年（全期間は年レンジで選択可）。改正の近年動向が一目で読める粒度にする。
+  state.yearFrom = Math.max(years[0], state.yearTo - 11);
+  for (const sel of [el("yearFrom"), el("yearTo")]) {
+    sel.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  }
+  el("yearFrom").value = state.yearFrom;
+  el("yearTo").value = state.yearTo;
+  el("genInfo").textContent = `生成日: ${state.data.generated_at}`;
+  el("srcText").textContent = state.data.source || "e-Gov 法令API v2";
+
+  // 分野軸セレクタ (data.axes から動的に。第2弾で category 追加、将来 ministry)
+  el("axisSel").innerHTML = Object.keys(state.data.axes)
+    .map((k) => `<option value="${k}">${state.data.axes[k].label || AXIS_LABELS[k] || k}</option>`).join("");
+  el("axisSel").value = state.axis;
+  el("axisSel").addEventListener("change", (e) => {
+    state.axis = e.target.value;
+    state.selected = null; state.search = ""; el("search").value = "";
+    closePanel(); render();
+  });
+
+  el("modeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.mode = b.dataset.mode;
+    [...el("modeSeg").children].forEach((c) => c.classList.toggle("active", c === b));
+    state.selected = null; closePanel(); render();
+  });
+  const onYear = () => {
+    let f = +el("yearFrom").value, t = +el("yearTo").value;
+    if (f > t) { [f, t] = [t, f]; el("yearFrom").value = f; el("yearTo").value = t; }
+    state.yearFrom = f; state.yearTo = t; render();
+  };
+  el("yearFrom").addEventListener("change", onYear);
+  el("yearTo").addEventListener("change", onYear);
+  el("search").addEventListener("input", (e) => {
+    state.search = e.target.value.trim();
+    if (state.search) state.selected = null; else el("panel").classList.remove("open");
+    render();
+  });
+  el("panelClose").addEventListener("click", closePanel);
+}
+
+const yearsInRange = () => state.data.years.filter((y) => y >= state.yearFrom && y <= state.yearTo);
+const sumInRange = (byYear) => yearsInRange().reduce((s, y) => s + (byYear[y] || byYear[String(y)] || 0), 0);
+const cellYearVal = (cell, y) => cell.by_year[y] || cell.by_year[String(y)] || 0;
+
+// 現在の軸の集計セル群
+const groupsOf = () => state.data.axes[state.axis].groups;
+// 指定区分に属する法令 (現在の軸で)
+const lawsInGroup = (group) => state.data.laws.filter((l) => l.groups[state.axis] === group);
+
+// 検索: タイトルに一致する法令と、それが属する現軸の区分集合を返す
+function searchMatches() {
+  const q = state.search.toLowerCase();
+  if (!q) return null;
+  const groups = new Set(); const laws = [];
+  for (const law of state.data.laws) {
+    if ((law.title || "").toLowerCase().includes(q)) {
+      const g = law.groups[state.axis];
+      if (g != null) groups.add(g);
+      laws.push({ ...law, group: g, groupLabel: g });
+    }
+  }
+  return { groups, laws };
+}
+
+// 現ビューの値から分位カラースケールを構築
+function buildScale(values) {
+  const nonzero = values.filter((v) => v > 0);
+  if (nonzero.length === 0) return { color: () => "var(--zero)", quantile: null };
+  const q = d3.scaleQuantile().domain(nonzero).range(RAMP);
+  return { color: (v) => (v > 0 ? q(v) : "var(--zero)"), quantile: q };
+}
+
+function renderLegend(scale) {
+  const box = el("legend");
+  const metric = state.mode === "grid" ? "その年の改正回数" : "期間内の改正回数（累計）";
+  let html = `<span class="title">凡例</span><span style="color:var(--muted);font-size:12px">${metric}</span>`;
+  html += `<span class="item"><span class="sw" style="background:var(--zero)"></span>0回</span>`;
+  if (scale.quantile) {
+    const ext = scale.quantile.quantiles(); // 境界値 (RAMP.length-1 個)
+    RAMP.forEach((col, i) => {
+      const lo = i === 0 ? 1 : Math.floor(ext[i - 1]) + 1; // 整数で連続させ重複を防ぐ
+      const hi = i === RAMP.length - 1 ? null : Math.floor(ext[i]);
+      const lbl = hi == null ? `${lo}〜` : (lo >= hi ? `${lo}` : `${lo}〜${hi}`);
+      html += `<span class="item"><span class="sw" style="background:${col}"></span>${lbl}</span>`;
+    });
+  } else {
+    html += `<span class="item" style="color:var(--muted)">この範囲に改正データがありません</span>`;
+  }
+  box.innerHTML = html;
+}
+
+function render() {
+  if (!state.data) return;
+  const svg = d3.select("#chart");
+  svg.selectAll("*").remove();
+  if (state.mode === "grid") renderGrid(svg);
+  else renderTreemap(svg);
+  if (state.search && !state.selected) showSearchResults();
+}
+
+// 検索: 一致法令を右パネルに直接表示
+function showSearchResults() {
+  const m = searchMatches();
+  if (!m) return;
+  el("panel").classList.add("open");
+  el("panelTitle").textContent = `検索: 「${state.search}」`;
+  el("panelSub").textContent = `${m.laws.length.toLocaleString()} 件ヒット（${m.groups.size} 区分）`;
+  const LIMIT = 80;
+  const sorted = m.laws.slice().sort((a, b) => b.total - a.total);
+  let html = `<section><h3>該当する法令</h3>`;
+  if (sorted.length === 0) html += `<div class="more">一致する法令がありません。</div>`;
+  else {
+    html += sorted.slice(0, LIMIT).map((law) =>
+      `<div class="law"><div class="cnt">${law.total}</div>
+       <div class="nm"><a href="${EGOV_LAW_URL(law.id)}" target="_blank" rel="noopener">${escapeHtml(law.title)}</a>
+       <div class="meta">${escapeHtml(law.groupLabel || "")} ／ ${escapeHtml(law.num || law.id)}</div></div></div>`).join("");
+    if (sorted.length > LIMIT) html += `<div class="more">ほか ${sorted.length - LIMIT} 件</div>`;
+  }
+  html += `</section>`;
+  el("panelBody").innerHTML = html;
+}
+
+/* ---------- 経年グリッド ---------- */
+function renderGrid(svg) {
+  const cells = groupsOf();
+  const years = yearsInRange();
+  const match = searchMatches();
+
+  const labelW = 96, cell = 26, padTop = 22, rowH = 26;
+  const w = labelW + years.length * cell + 12;
+  const h = padTop + cells.length * rowH + 6;
+  svg.attr("width", w).attr("height", h);
+
+  // スケール: 全セル×全年(範囲内)の値
+  const vals = [];
+  cells.forEach((c) => years.forEach((y) => vals.push(cellYearVal(c, y))));
+  const scale = buildScale(vals);
+  renderLegend(scale);
+
+  // 5年区切りの縦ガイド線（西暦末尾0/5の左端）。Bloomberg的に時間の節目を読みやすく。
+  svg.selectAll("line.gridsep").data(years.filter((y) => y % 5 === 0)).enter().append("line")
+    .attr("class", "gridsep")
+    .attr("x1", (y) => labelW + years.indexOf(y) * cell).attr("x2", (y) => labelW + years.indexOf(y) * cell)
+    .attr("y1", padTop - 4).attr("y2", padTop + cells.length * rowH);
+
+  // 年ラベル (狭いときは末尾0/5のみ表示し、節目を強調)
+  const step = years.length > 16 ? 5 : 1;
+  svg.selectAll("text.yearlab").data(years).enter().append("text")
+    .attr("class", (d) => "yearlab" + (d % 5 === 0 ? " major" : ""))
+    .attr("x", (d, i) => labelW + i * cell + cell / 2)
+    .attr("y", padTop - 8).attr("text-anchor", "middle")
+    .text((d) => (step === 1 || d % 5 === 0 ? d : ""));
+
+  const rows = svg.selectAll("g.row").data(cells).enter().append("g")
+    .attr("class", "row")
+    .attr("transform", (d, i) => `translate(0,${padTop + i * rowH})`);
+
+  rows.append("text").attr("class", "rowlab")
+    .attr("data-group", (d) => d.group)
+    .attr("x", labelW - 8).attr("y", rowH / 2 + 4).attr("text-anchor", "end")
+    .text((d) => `${d.label}`);
+
+  const isSel = (c, y) => state.selected && state.selected.group === c.group && state.selected.year === y;
+  rows.each(function (c) {
+    const g = d3.select(this);
+    const dimRow = match && !match.groups.has(c.group);
+    g.selectAll("rect").data(years).enter().append("rect")
+      .attr("class", (y) => "cell" + (dimRow ? " dim" : "")
+        + (match && match.groups.has(c.group) ? " hit" : "") + (isSel(c, y) ? " sel" : ""))
+      .attr("x", (y, i) => labelW + i * cell).attr("y", 2)
+      .attr("width", cell - 0).attr("height", rowH - 4)
+      .attr("fill", (y) => scale.color(cellYearVal(c, y)))
+      .on("mousemove", (ev, y) => {
+        svg.selectAll("text.rowlab").classed("cur", (d) => d.group === c.group);
+        svg.selectAll("text.yearlab").classed("major", (d) => d === y || d % 5 === 0);
+        showTip(ev, `<b>${c.label}</b> ／ ${y}年<br>改正 <b>${cellYearVal(c, y)}</b> 回<br>法令数 ${c.law_count.toLocaleString()}`);
+      })
+      .on("mouseleave", () => {
+        svg.selectAll("text.rowlab").classed("cur", false);
+        svg.selectAll("text.yearlab").classed("major", (d) => d % 5 === 0);
+        hideTip();
+      })
+      .on("click", (ev, y) => selectCell(c, y));
+  });
+}
+
+/* ---------- 累計ツリーマップ ---------- */
+function renderTreemap(svg) {
+  const cells = groupsOf();
+  const match = searchMatches();
+  const totals = cells.map((c) => sumInRange(c.by_year));
+  const scale = buildScale(totals);
+  renderLegend(scale);
+
+  const stage = el("stage");
+  const w = Math.max(420, stage.clientWidth - 32);
+  const h = Math.max(360, stage.clientHeight - 120);
+  svg.attr("width", w).attr("height", h);
+
+  const root = d3.hierarchy({ children: cells })
+    .sum((d) => d.law_count || 0)
+    .sort((a, b) => b.value - a.value);
+  d3.treemap().size([w, h]).paddingInner(2).round(true)(root);
+
+  const t = svg.selectAll("g.tile").data(root.leaves()).enter().append("g")
+    .attr("class", (d) => {
+      const m = match && match.groups.has(d.data.group);
+      const dim = match && !m;
+      const sel = state.selected && state.selected.group === d.data.group && state.selected.year == null;
+      return "tile" + (dim ? " dim" : "") + (m ? " hit" : "") + (sel ? " sel" : "");
+    })
+    .attr("transform", (d) => `translate(${d.x0},${d.y0})`);
+
+  t.append("rect")
+    .attr("width", (d) => d.x1 - d.x0).attr("height", (d) => d.y1 - d.y0)
+    .attr("fill", (d) => scale.color(sumInRange(d.data.by_year)))
+    .on("mousemove", (ev, d) => showTip(ev,
+      `<b>${d.data.label}</b><br>法令数 <b>${d.data.law_count.toLocaleString()}</b><br>改正 <b>${sumInRange(d.data.by_year)}</b> 回（${state.yearFrom}–${state.yearTo}）`))
+    .on("mouseleave", hideTip)
+    .on("click", (ev, d) => selectCell(d.data, null));
+
+  t.append("text").attr("x", 6).attr("y", 16)
+    .style("font-size", "12px").style("font-weight", "600")
+    .style("fill", (d) => (sumInRange(d.data.by_year) > (scale.quantile ? scale.quantile.quantiles()[2] || 1e9 : 1e9) ? "#fff" : "var(--ink)"))
+    .each(function (d) {
+      const wpx = d.x1 - d.x0, hpx = d.y1 - d.y0;
+      const sel = d3.select(this);
+      if (wpx < 46 || hpx < 26) { sel.remove(); return; }
+      sel.append("tspan").text(d.data.label);
+      if (hpx > 40)
+        sel.append("tspan").attr("x", 6).attr("dy", 15).style("font-weight", "400")
+          .style("fill", "currentColor").style("opacity", .85)
+          .text(`${d.data.law_count.toLocaleString()}件`);
+      if (hpx > 58)
+        sel.append("tspan").attr("x", 6).attr("dy", 14).style("font-weight", "400")
+          .style("fill", "currentColor").style("opacity", .7)
+          .text(`改正${sumInRange(d.data.by_year).toLocaleString()}回`);
+    });
+}
+
+/* ---------- ツールチップ ---------- */
+function showTip(ev, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = 1;
+  tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - 290) + "px";
+  tip.style.top = ev.clientY + 14 + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+
+/* ---------- 右パネル ---------- */
+function closePanel() { state.selected = null; el("panel").classList.remove("open"); render(); }
+
+function lawRow(law, count) {
+  const date = law.date ? `<span class="meta">公布 ${law.date}</span>` : "";
+  return `<div class="law"><div class="cnt">${count}</div>
+    <div class="nm"><a href="${EGOV_LAW_URL(law.id)}" target="_blank" rel="noopener">${escapeHtml(law.title)}</a>
+    <div class="meta">${escapeHtml(law.num || law.id)} ${date}</div></div></div>`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function selectCell(cellData, year) {
+  state.selected = { group: cellData.group, year };
+  const cell = groupsOf().find((c) => c.group === cellData.group);
+  const groupLaws = lawsInGroup(cell.group);
+  el("panel").classList.add("open");
+  const yearTxt = year != null ? `／ ${year}年` : `／ 累計 ${state.yearFrom}–${state.yearTo}`;
+  el("panelTitle").textContent = cell.label;
+  el("panelSub").textContent = `法令 ${cell.law_count.toLocaleString()} 件 ${yearTxt}`;
+
+  // 改正内訳ランキング (year指定ならその年、なければ範囲累計)
+  const ranked = groupLaws
+    .map((law) => ({ law, count: year != null ? (law.by_year[year] || law.by_year[String(year)] || 0) : sumInRange(law.by_year) }))
+    .sort((a, b) => b.count - a.count);
+  const amended = ranked.filter((r) => r.count > 0);
+  const LIMIT = 50;
+
+  let html = `<section><h3>② 改正内訳（回数ランキング）</h3>`;
+  if (amended.length === 0) {
+    html += `<div class="more">この${year != null ? "年" : "期間"}に改正された法令はありません。</div>`;
+  } else {
+    html += amended.slice(0, LIMIT).map((r) => lawRow(r.law, r.count)).join("");
+    if (amended.length > LIMIT) html += `<div class="more">ほか ${amended.length - LIMIT} 件</div>`;
+  }
+  html += `</section>`;
+
+  // 法令一覧 (年指定時=その年に改正された法令 / 累計時=区分の全法令)
+  const listLaws = year != null ? amended.map((r) => r.law) : groupLaws;
+  html += `<section><h3>① 法令一覧（${year != null ? `${year}年に改正` : "この区分の全法令"}・${listLaws.length.toLocaleString()}件）</h3>`;
+  html += listLaws.slice(0, LIMIT).map((law) => lawRow(law, year != null ? (law.by_year[year] || law.by_year[String(year)] || 0) : law.total)).join("");
+  if (listLaws.length > LIMIT) html += `<div class="more">ほか ${listLaws.length - LIMIT} 件（全件はe-Gov法令検索で）</div>`;
+  html += `</section>`;
+
+  el("panelBody").innerHTML = html;
+  render(); // ハイライト更新
+}
+
+load();
+</script>
+</body>
+</html>
