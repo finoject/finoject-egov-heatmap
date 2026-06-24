@@ -37,6 +37,10 @@ const LAW_TYPE_LABELS = {
   MinisterialOrdinance: "府省令",
   Rule: "規則",
   Misc: "その他",
+  // 法律としての効力を持つ命令（ポツダム命令・物価統制令等）。e-Gov は複合 law_type で区別。
+  "Act,CabinetOrder": "政令（法律の効力）",
+  "Act,ImperialOrder": "勅令（法律の効力）",
+  "Act,MinisterialOrdinance": "府省令（法律の効力）",
 };
 const labelOf = (t) => LAW_TYPE_LABELS[t] ?? t ?? "不明";
 
