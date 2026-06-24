@@ -1,7 +1,9 @@
-# e-Gov 改正頻度ヒートマップ（第1弾：法令種別軸）
+# e-Gov 改正頻度ヒートマップ
 
 e-Gov 法令検索の全法令（約9,500件）を対象に、「どの分野の法令がよく改正されるか」を
 ヒートマップで可視化する静的 Web アプリ。色の濃さ＝改正頻度（公布ベース）。
+
+**公開URL: https://finoject.github.io/finoject-egov-heatmap/**
 
 仕様: `egov-heatmap-spec-v0.3.md` ／ 着手指示: `egov-heatmap-kickoff-prompt.md`（Desktop）
 
@@ -55,7 +57,21 @@ npm run serve         # http://localhost:8080 で web/ を配信
 # → ブラウザで http://localhost:8080/index.html を開く
 ```
 
-GitHub Pages 等の静的ホスティングにそのまま載せられます（`web/` と `data/` を配置）。
+### 3. デプロイ（GitHub Pages）
+
+公開済み: https://finoject.github.io/finoject-egov-heatmap/ （リポジトリ `finoject/finoject-egov-heatmap`、Pages source = main / root）。
+ルート `index.html` は `web/index.html` へリダイレクト。`.nojekyll` で素のまま配信。
+
+データを更新して反映する手順:
+
+```bash
+npm run build:all     # 改正履歴を再取得（キャッシュ流用・差分のみ）→ data/heatmap.json 再生成
+git add data/heatmap.json
+git commit -m "data: 月次更新 YYYY-MM"
+git push              # 数分で Pages に反映
+```
+
+> `batch/cache/`（APIキャッシュ）と `.claude/`（ローカル設定）は `.gitignore` 済みで公開されません。
 
 ## 機能（仕様書 §7）
 
