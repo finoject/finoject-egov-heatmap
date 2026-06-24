@@ -19,29 +19,42 @@
   html, body { margin: 0; height: 100%; }
   body {
     font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
-    color: var(--ink); background: var(--bg); font-size: 14px;
+    color: var(--ink); background: var(--bg); font-size: 15px;
     display: flex; flex-direction: column; height: 100vh;
   }
-  header {
-    border-bottom: 1px solid var(--line); padding: 10px 16px;
-    display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center;
-  }
-  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .02em; }
-  header h1 .sub { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  header { border-bottom: 1px solid var(--line); padding: 9px 16px; }
+  .hrow { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .hrow.r1 { margin-bottom: 8px; }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  header h1 .sub { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  #guide { color: var(--muted); font-size: 12.5px; line-height: 1.4; flex: 1 1 280px; }
+  #guide b { color: var(--ink); font-weight: 600; }
   .ctl { display: flex; align-items: center; gap: 6px; }
-  .ctl label { color: var(--muted); font-size: 12px; }
+  .ctl label { color: var(--muted); font-size: 12.5px; }
   select, input[type=search] {
-    font: inherit; font-size: 13px; color: var(--ink);
+    font: inherit; font-size: 13.5px; color: var(--ink);
     border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: #fff;
   }
-  input[type=search] { width: 200px; }
+  select:disabled { color: var(--muted); background: #f3f5f7; }
+  input[type=search] { width: 260px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg.primary { box-shadow: 0 0 0 2px rgba(46,80,144,.10); }
   .seg button {
-    font: inherit; font-size: 13px; border: 0; background: #fff; color: var(--ink);
-    padding: 5px 12px; cursor: pointer;
+    font: inherit; font-size: 13.5px; border: 0; background: #fff; color: var(--ink);
+    padding: 6px 14px; cursor: pointer;
   }
   .seg button.active { background: var(--accent); color: #fff; }
   .seg button + button { border-left: 1px solid var(--line); }
+  .presets { display: inline-flex; gap: 4px; }
+  .presets button {
+    font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; color: var(--muted);
+    padding: 3px 8px; border-radius: 5px; cursor: pointer;
+  }
+  .presets button:hover { border-color: var(--accent); color: var(--accent); }
+  .presets button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .summary { background: #eef2f8; border: 1px solid #dde5f0; border-radius: 8px; padding: 9px 11px; margin: 2px 0 10px; font-size: 12.5px; line-height: 1.5; }
+  .summary .st { color: var(--accent); font-weight: 700; font-size: 11.5px; display: block; margin-bottom: 3px; }
+  .summary b { font-weight: 600; }
 
   main { flex: 1; display: flex; min-height: 0; }
   #stage { flex: 1; overflow: hidden; padding: 16px; position: relative; min-width: 0; }
@@ -116,24 +129,28 @@
 </head>
 <body>
 <header>
-  <h1>e-Gov 改正頻度ヒートマップ<span class="sub" id="hsub">法令種別 × 改正頻度（公布ベース）</span></h1>
-  <div class="ctl">
-    <div class="seg" id="modeSeg">
-      <button data-mode="grid" class="active">経年グリッド</button>
-      <button data-mode="treemap">累計ツリーマップ</button>
-      <button data-mode="dist">公布年別度数分布</button>
+  <div class="hrow r1">
+    <h1>e-Gov 改正頻度ヒートマップ<span class="sub">現行法令の改正が、どの分野・時代に集中しているかを可視化</span></h1>
+    <div class="seg primary" id="modeSeg">
+      <button data-mode="grid" class="active" title="行=分野 × 列=5年区切りの年代。色＝その5年間の改正回数。時系列の偏りを把握。">経年グリッド</button>
+      <button data-mode="treemap" title="タイル面積＝法令数、色＝期間内の改正回数。全体構造を把握。">累計ツリーマップ</button>
+      <button data-mode="dist" title="現行法令を公布年（5年区切り）で度数分布。いつ作られた法令が今も生きているかを把握。">公布年別度数分布</button>
     </div>
+    <div id="guide"></div>
   </div>
-  <div class="ctl">
-    <label>分野軸</label>
-    <select id="axisSel"><option value="law_type">法令種別</option></select>
-  </div>
-  <div class="ctl">
-    <label>年</label>
-    <select id="yearFrom"></select><span style="color:var(--muted)">–</span><select id="yearTo"></select>
-  </div>
-  <div class="ctl" style="margin-left:auto">
-    <input type="search" id="search" placeholder="法令名で検索…" autocomplete="off" />
+  <div class="hrow r2">
+    <div class="ctl">
+      <label>分野軸</label>
+      <select id="axisSel" title="ヒートマップ/ツリーマップの行・分類を切替"><option value="law_type">法令種別</option></select>
+    </div>
+    <div class="ctl">
+      <label>年</label>
+      <span class="presets" id="presets"></span>
+      <select id="yearFrom"></select><span style="color:var(--muted)">–</span><select id="yearTo"></select>
+    </div>
+    <div class="ctl" style="margin-left:auto">
+      <input type="search" id="search" placeholder="法令名で検索（部分一致）" autocomplete="off" />
+    </div>
   </div>
 </header>
 
@@ -198,6 +215,7 @@ async function load() {
     initControls();
     hideOverlay();
     render();
+    autoSelectInitial(); // 初回は代表セルを選択して右パネルを開き、価値を即提示
   } catch (e) {
     showOverlay(`データの読み込みに失敗しました: ${e.message}`, false);
     console.error(e);
@@ -242,6 +260,24 @@ function initControls() {
   };
   el("yearFrom").addEventListener("change", onYear);
   el("yearTo").addEventListener("change", onYear);
+
+  // 年レンジ プリセット（5年区切りの開始年に一致させる）
+  const lastStart = PERIODS[PERIODS.length - 1].start;
+  const END = PERIODS[PERIODS.length - 1].end;
+  const presetDefs = [
+    ["全期間", PERIODS[0].start],
+    ["直近10年", PERIODS[periodIndexOf(END - 9)].start],
+    ["直近30年", PERIODS[periodIndexOf(END - 29)].start],
+    ["戦後〜", PERIODS[periodIndexOf(1947)].start],
+  ];
+  el("presets").innerHTML = presetDefs.map(([lab, f]) => `<button data-from="${f}" data-to="${lastStart}">${lab}</button>`).join("");
+  el("presets").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.yearFrom = +b.dataset.from; state.yearTo = +b.dataset.to;
+    el("yearFrom").value = state.yearFrom; el("yearTo").value = state.yearTo;
+    render();
+  });
+
   el("search").addEventListener("input", (e) => {
     state.search = e.target.value.trim();
     if (state.search) state.selected = null; else el("panel").classList.remove("open");
@@ -344,6 +380,38 @@ function render() {
   else if (state.mode === "treemap") renderTreemap(svg);
   else renderDist(svg);
   if (state.search && !state.selected && !dist) showSearchResults();
+  updateGuide();
+  syncPresets();
+}
+
+// モードごとの読み方ガイド（ヘッダー下）
+function updateGuide() {
+  const g = {
+    grid: "色が濃い（赤）ほど、その<b>5年間の改正回数</b>が多い分野（比率でなく実回数）。<b>セルをクリック</b>で右側に対象法令の一覧・改正ランキング。",
+    treemap: "タイルの<b>面積＝法令数</b>・<b>色＝期間内の改正回数</b>。タイルをクリックで内訳。",
+    dist: "現行法令を<b>公布年（5年区切り）</b>で度数分布。下＝希少な種別／上＝多数。<b>棒をクリック</b>でその期間の法令一覧。",
+  }[state.mode] || "";
+  el("guide").innerHTML = g;
+}
+
+// プリセットの選択状態を現在の年レンジに同期
+function syncPresets() {
+  const last = PERIODS[PERIODS.length - 1].start;
+  [...el("presets").children].forEach((b) => {
+    b.classList.toggle("on", +b.dataset.from === state.yearFrom && +b.dataset.to === state.yearTo && state.yearTo === last);
+  });
+}
+
+// 初回のみ：表示範囲で最も改正が集中したセルを選び、右パネルを開く
+function autoSelectInitial() {
+  if (!state.data || state.mode !== "grid" || state.search) return;
+  const periods = periodsInRange();
+  let best = null, bestV = 0;
+  for (const c of groupsOf()) for (const p of periods) {
+    const v = periodVal(c.by_year, p);
+    if (v > bestV) { bestV = v; best = { c, p }; }
+  }
+  if (best && bestV > 0) selectCell(best.c, best.p);
 }
 
 // 検索: 一致法令を右パネルに直接表示
@@ -608,7 +676,16 @@ function selectDist(period, typeLabel) {
   el("panelTitle").textContent = `${period.start}〜${period.end}年（${period.era}）／ ${typeLabel}`;
   el("panelSub").textContent = `この期間に公布され現存 ${list.length.toLocaleString()} 件（公布が古い順）`;
   const LIMIT = 100;
-  let html = `<section><h3>この期間に公布され今も有効な${typeLabel}</h3>`;
+  // 先頭に要約
+  let html = "";
+  if (list.length) {
+    const mostAmended = list.reduce((a, b) => ((b.total || 0) > (a.total || 0) ? b : a));
+    html += `<div class="summary"><span class="st">この期間の特徴</span>`;
+    html += `${period.start}〜${period.end}年に公布され今も有効な${typeLabel}は <b>${list.length.toLocaleString()}</b> 件。`;
+    html += ` 最古は <b>${escapeHtml(list[0].title)}</b>（${String(list[0].date).slice(0, 4)}）、最も改正されたのは <b>${escapeHtml(mostAmended.title)}</b>（${(mostAmended.total || 0).toLocaleString()}回）。`;
+    html += `</div>`;
+  }
+  html += `<section><h3>この期間に公布され今も有効な${typeLabel}</h3>`;
   html += list.slice(0, LIMIT).map((l) =>
     `<div class="law"><div class="cnt" style="min-width:46px">${String(l.date || "").slice(0, 4)}</div>
      <div class="nm"><a href="${EGOV_LAW_URL(l.id)}" target="_blank" rel="noopener">${escapeHtml(l.title)}</a>
@@ -653,7 +730,16 @@ function selectCell(cellData, period) {
   const amended = ranked.filter((r) => r.count > 0);
   const LIMIT = 50;
 
-  let html = `<section><h3>② 改正内訳（回数ランキング）</h3>`;
+  // 先頭に要約（クリックの見返りを先に提示）
+  const scopeTotal = amended.reduce((s, r) => s + r.count, 0);
+  const scopeWord = period ? "この期間" : "表示範囲";
+  let html = `<div class="summary"><span class="st">この区分の特徴</span>`;
+  html += `法令 <b>${cell.law_count.toLocaleString()}</b> 件、${scopeWord}の改正計 <b>${scopeTotal.toLocaleString()}</b> 回。`;
+  if (amended[0]) html += ` 最も改正されたのは <b>${escapeHtml(amended[0].law.title)}</b>（${amended[0].count.toLocaleString()}回）。`;
+  else html += ` ${scopeWord}に改正された法令はありません。`;
+  html += `</div>`;
+
+  html += `<section><h3>② 改正内訳（回数ランキング）</h3>`;
   if (amended.length === 0) {
     html += `<div class="more">この${period ? "期間" : "範囲"}に改正された法令はありません。</div>`;
   } else {
