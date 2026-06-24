@@ -26,7 +26,8 @@ const REV_DIR = path.join(CACHE_DIR, "revisions");
 const MASTER_PATH = path.join(CACHE_DIR, "laws_master.json");
 const OUT_PATH = path.join(__dirname, "..", "data", "heatmap.json");
 
-const START_YEAR = 2000;
+// 日本最古の現行法令「明治五年太政官布告第三百三十七号(改暦ノ布告)」=1872年公布を起点に。
+const START_YEAR = 1872;
 const END_YEAR = new Date().getFullYear();
 
 const LAW_TYPE_LABELS = {
