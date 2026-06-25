@@ -63,6 +63,9 @@
   .summary { background: #eef2f8; border: 1px solid #dde5f0; border-radius: 8px; padding: 9px 11px; margin: 2px 0 10px; font-size: 12.5px; line-height: 1.5; }
   .summary .st { color: var(--accent); font-weight: 700; font-size: 11.5px; display: block; margin-bottom: 3px; }
   .summary b { font-weight: 600; }
+  .insight { background: #fbf7ee; border: 1px solid #ecdfc4; border-radius: 8px; padding: 9px 11px; margin: 2px 0 10px; font-size: 12.5px; line-height: 1.55; }
+  .insight .it { color: #9a6b1f; font-weight: 700; font-size: 11px; display: block; margin-bottom: 3px; }
+  .insight .note { color: var(--muted); font-size: 10.5px; margin-top: 4px; }
 
   main { flex: 1; display: flex; min-height: 0; }
   #stage { flex: 1; overflow: hidden; padding: 16px; position: relative; min-width: 0; }
@@ -230,6 +233,7 @@ const RAMP = ["#4575b4", "#74add1", "#abd9e9", "#fdae61", "#f46d43", "#d73027"];
 
 const state = {
   data: null, axis: "law_type", mode: "grid", yearFrom: null, yearTo: null, search: "", selected: null,
+  insights: null, insightsMeta: null,
 };
 const AXIS_LABELS = { law_type: "法令種別", category: "事項別分類", ministry: "所管府省" };
 // 公布年別度数分布用: 法令種別ごとのカテゴリ色 (initControlsで法令種別グループ順に割当)
@@ -257,6 +261,11 @@ async function load() {
     }
     state.data = data;
     state.axis = data.default_axis && data.axes[data.default_axis] ? data.default_axis : Object.keys(data.axes)[0];
+    // AI参考解説（任意・事前生成）。無ければ静かにスキップ。
+    try {
+      const ir = await fetch(`../data/insights.json?t=${state.data.generated_at || Date.now()}`, { cache: "no-store" });
+      if (ir.ok) { const ij = await ir.json(); state.insights = ij.items || {}; state.insightsMeta = ij; }
+    } catch (_) { /* insights は任意 */ }
     initControls();
     hideOverlay();
     render();
@@ -776,10 +785,21 @@ function selectCell(cellData, period) {
   const amended = ranked.filter((r) => r.count > 0);
   const LIMIT = 50;
 
-  // 先頭に要約（クリックの見返りを先に提示）
+  // AI参考解説（事前生成・任意）。期間指定セルかつ該当キーがあるときのみ表示。
+  let html = "";
+  if (period && state.insights) {
+    const ins = state.insights[`${state.axis}|${cell.group}|${period.start}`];
+    if (ins && ins.caption) {
+      const tag = state.insightsMeta && state.insightsMeta.sample ? "AI参考解説（サンプル）" : "AI参考解説";
+      const note = (state.insightsMeta && state.insightsMeta.disclaimer) || "AIが実データを基に生成した参考情報です。";
+      html += `<div class="insight"><span class="it">💡 ${tag}</span>${escapeHtml(ins.caption)}<div class="note">${escapeHtml(note)}</div></div>`;
+    }
+  }
+
+  // 要約（クリックの見返りを先に提示）
   const scopeTotal = amended.reduce((s, r) => s + r.count, 0);
   const scopeWord = period ? "この期間" : "表示範囲";
-  let html = `<div class="summary"><span class="st">この区分の特徴</span>`;
+  html += `<div class="summary"><span class="st">この区分の特徴</span>`;
   html += `法令 <b>${cell.law_count.toLocaleString()}</b> 件、${scopeWord}の改正計 <b>${scopeTotal.toLocaleString()}</b> 回。`;
   if (amended[0]) html += ` 最も改正されたのは <b>${escapeHtml(amended[0].law.title)}</b>（${amended[0].count.toLocaleString()}回）。`;
   else html += ` ${scopeWord}に改正された法令はありません。`;

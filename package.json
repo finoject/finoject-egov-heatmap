@@ -8,8 +8,13 @@
     "fetch:sample": "node batch/fetch.js --per-type 20",
     "fetch:all": "node batch/fetch.js --all",
     "aggregate": "node batch/aggregate.js",
+    "insights": "node batch/insights.js --n 10",
+    "insights:dry": "node batch/insights.js --n 10 --dry",
     "build:sample": "node batch/fetch.js --per-type 20 && node batch/aggregate.js",
     "build:all": "node batch/fetch.js --all && node batch/aggregate.js",
     "serve": "node --eval \"import('node:http').then(({default:h})=>import('node:fs').then(({default:f})=>import('node:path').then(({default:p})=>h.createServer((q,s)=>{let fp=p.join('web',q.url==='/'?'index.html':q.url);if(q.url.startsWith('/data/'))fp='.'+q.url;f.readFile(fp,(e,d)=>{if(e){s.writeHead(404);s.end('404');return}const t={'.html':'text/html','.js':'text/javascript','.json':'application/json','.css':'text/css'}[p.extname(fp)]||'text/plain';s.writeHead(200,{'content-type':t+'; charset=utf-8'});s.end(d)})}).listen(8080,()=>console.log('http://localhost:8080')))))\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0"
   }
 }
