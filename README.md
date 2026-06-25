@@ -134,7 +134,14 @@ node batch/insights.js --n 10 --dry             # APIを呼ばず対象とプロ
 上部バーの「分野軸」で切替:
 - **法令種別**（9区分）… master 由来
 - **事項別分類**（50区分: 行政組織・厚生・工業・国税…）… `/law_revisions` の `category` 由来。**API応答に含まれており外部データ不要**
-- **所管府省**（未収録）… API に無く、外部マッピングの入手元確定が必要（仕様書 §10）。`data.laws[].groups` に `ministry` を足し、`aggregate.js` に軸を1つ加えれば対応可能な構造にしてある
+- **所管府省（推定）**（19区分）… API に無いため**推定**。`batch/ministry.js` が ①発令省庁ルール（府省令などは番号に発令省庁が出る＝確定）＋②事項別分類デフォルト＋③Haiku推定 で `data/ministry.json`(law_id→府省) を生成 → `aggregate.js` が取り込み軸化。値は「（推定）」と明示。
+
+```bash
+node batch/ministry.js --rules-only     # キー不要・確定＋分類デフォルトで全件マップ（第一次）
+node batch/ministry.js --ai --n 100     # 未確定の先頭100件をHaikuで精緻化（要 ANTHROPIC_API_KEY）
+node batch/ministry.js --ai             # 未確定を全件AI推定
+node batch/aggregate.js                 # ministry.json を取り込み heatmap.json を再生成
+```
 
 JSON は `{ years, laws[], axes:{law_type,category} }` 構造。法令一覧は単一配列で持ち、各軸は集計のみ＋各法令に `groups:{法令種別,事項別分類}` を付与（サイズ最適化・検索の重複排除）。
 
