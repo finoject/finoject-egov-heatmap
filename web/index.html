@@ -94,6 +94,8 @@
   .law .nm a { color: var(--ink); text-decoration: none; }
   .law .nm a:hover { text-decoration: underline; color: var(--accent); }
   .law .meta { color: var(--muted); font-size: 11px; }
+  .law .plain { color: #6b5a2f; font-size: 11px; margin-top: 1px; }
+  .law .plain::before { content: "≒ "; color: #b09a5e; }
   .more { color: var(--muted); font-size: 12px; padding-top: 8px; }
 
   text.rowlab { font-size: 12px; fill: var(--ink); }
@@ -233,7 +235,7 @@ const RAMP = ["#4575b4", "#74add1", "#abd9e9", "#fdae61", "#f46d43", "#d73027"];
 
 const state = {
   data: null, axis: "law_type", mode: "grid", yearFrom: null, yearTo: null, search: "", selected: null,
-  insights: null, insightsMeta: null,
+  insights: null, insightsMeta: null, plainnames: null,
 };
 const AXIS_LABELS = { law_type: "法令種別", category: "事項別分類", ministry: "所管府省" };
 // 公布年別度数分布用: 法令種別ごとのカテゴリ色 (initControlsで法令種別グループ順に割当)
@@ -266,6 +268,11 @@ async function load() {
       const ir = await fetch(`../data/insights.json?t=${state.data.generated_at || Date.now()}`, { cache: "no-store" });
       if (ir.ok) { const ij = await ir.json(); state.insights = ij.items || {}; state.insightsMeta = ij; }
     } catch (_) { /* insights は任意 */ }
+    // 古い法令名の平易化（③・任意）
+    try {
+      const pr = await fetch(`../data/plainnames.json?t=${state.data.generated_at || Date.now()}`, { cache: "no-store" });
+      if (pr.ok) { const pj = await pr.json(); state.plainnames = pj.items || {}; }
+    } catch (_) { /* plainnames は任意 */ }
     initControls();
     hideOverlay();
     render();
@@ -484,7 +491,7 @@ function showSearchResults() {
     html += sorted.slice(0, LIMIT).map((law) =>
       `<div class="law"><div class="cnt">${law.total}</div>
        <div class="nm"><a href="${EGOV_LAW_URL(law.id)}" target="_blank" rel="noopener">${escapeHtml(law.title)}</a>
-       <div class="meta">${escapeHtml(law.groupLabel || "")} ／ ${escapeHtml(law.num || law.id)}</div></div></div>`).join("");
+       ${plainSub(law.id)}<div class="meta">${escapeHtml(law.groupLabel || "")} ／ ${escapeHtml(law.num || law.id)}</div></div></div>`).join("");
     if (sorted.length > LIMIT) html += `<div class="more">ほか ${sorted.length - LIMIT} 件</div>`;
   }
   html += `</section>`;
@@ -744,7 +751,7 @@ function selectDist(period, typeLabel) {
   html += list.slice(0, LIMIT).map((l) =>
     `<div class="law"><div class="cnt" style="min-width:46px">${String(l.date || "").slice(0, 4)}</div>
      <div class="nm"><a href="${EGOV_LAW_URL(l.id)}" target="_blank" rel="noopener">${escapeHtml(l.title)}</a>
-     <div class="meta">${escapeHtml(l.num || l.id)} ／ 改正${(l.total || 0).toLocaleString()}回</div></div></div>`).join("");
+     ${plainSub(l.id)}<div class="meta">${escapeHtml(l.num || l.id)} ／ 改正${(l.total || 0).toLocaleString()}回</div></div></div>`).join("");
   if (list.length > LIMIT) html += `<div class="more">ほか ${(list.length - LIMIT).toLocaleString()} 件</div>`;
   html += `</section>`;
   el("panelBody").innerHTML = html;
@@ -762,11 +769,14 @@ function hideTip() { tip.style.opacity = 0; }
 /* ---------- 右パネル ---------- */
 function closePanel() { state.selected = null; el("panel").classList.remove("open"); render(); }
 
+// 古い法令名の平易化（③）。あれば名称の下に併記。
+const plainSub = (id) => (state.plainnames && state.plainnames[id] ? `<div class="plain">${escapeHtml(state.plainnames[id].plain)}</div>` : "");
+
 function lawRow(law, count) {
   const date = law.date ? `<span class="meta">公布 ${law.date}</span>` : "";
   return `<div class="law"><div class="cnt">${count}</div>
     <div class="nm"><a href="${EGOV_LAW_URL(law.id)}" target="_blank" rel="noopener">${escapeHtml(law.title)}</a>
-    <div class="meta">${escapeHtml(law.num || law.id)} ${date}</div></div></div>`;
+    ${plainSub(law.id)}<div class="meta">${escapeHtml(law.num || law.id)} ${date}</div></div></div>`;
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
