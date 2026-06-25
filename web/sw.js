@@ -2,7 +2,7 @@
 // 方針: ドキュメント／集計JSONは network-first（オンライン時は最新、オフライン時はキャッシュ）。
 //       静的アセット（D3・アイコン・manifest）は cache-first。
 // データ更新時は CACHE のバージョンを上げると確実に入れ替わる。
-const CACHE = "egov-heatmap-v4";
+const CACHE = "egov-heatmap-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,6 +12,7 @@ const ASSETS = [
   "./icons/maskable-512.png",
   "../data/heatmap.json",
   "../data/insights.json",
+  "../data/plainnames.json",
   "https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js",
 ];
 
