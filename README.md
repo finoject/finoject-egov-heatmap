@@ -96,6 +96,8 @@ gh api repos/finoject/finoject-egov-heatmap/pages/builds/latest --jq '{status,co
 - **ホバー**: ツールチップ（分野名／年／改正回数／法令数）。
 - **検索**: 法令名で該当セル/タイルをハイライトし、一致法令を右パネルに直接表示。
 - **状態表示**: ローディング／空／エラー。
+- **モバイル対応**: 760px以下で操作列をリフロー、右パネルを下部ドロワー化（スライドアップ）。
+- **PWA**: `web/manifest.webmanifest` ＋ `web/sw.js` でインストール可能・オフライン対応（ドキュメント/集計JSONは network-first、静的アセットは cache-first）。アイコンは `batch/make-icons.js` がヒートマップ柄PNGを生成（依存ゼロ・Node zlib）。データ更新時は `web/sw.js` の `CACHE` バージョンを上げると確実に入れ替わる。
 - **出典明示**: フッターに e-Gov（デジタル庁）＋政府標準利用規約2.0 を明記。
 
 ## 改正回数の定義（仕様書 §10 の残論点に対する本実装の確定）
