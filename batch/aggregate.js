@@ -111,6 +111,13 @@ function main() {
 
   const axisType = makeAxis("法令種別", (l) => labelOf(l.type));
   const axisCat = makeAxis("事項別分類", (l) => l.cat);
+  // 所管府省（推定）軸 (④): data/ministry.json があれば取り込む（無ければ従来どおり2軸）
+  const MINISTRY_PATH = path.join(__dirname, "..", "data", "ministry.json");
+  let ministryMap = null, axisMinistry = null;
+  if (fs.existsSync(MINISTRY_PATH)) {
+    try { ministryMap = JSON.parse(fs.readFileSync(MINISTRY_PATH, "utf-8")).items || null; } catch {}
+    if (ministryMap) axisMinistry = makeAxis("所管府省（推定）", (l) => l.ministry);
+  }
 
   for (const m of master.laws) {
     const rev = readRevisions(m.law_id);
@@ -128,9 +135,11 @@ function main() {
       by_year: rev?.byYear ?? {},
       groups: {},
     };
+    if (axisMinistry) law.ministry = ministryMap[m.law_id]?.ministry || "その他";
     laws.push(law);
     addToAxis(axisType, "law_type", law);
     addToAxis(axisCat, "category", law);
+    if (axisMinistry) addToAxis(axisMinistry, "ministry", law);
   }
 
   // 法令一覧は改正回数の多い順 (右パネルの内訳ランキングの既定順)
@@ -146,6 +155,7 @@ function main() {
     axes: {
       law_type: finalizeAxis(axisType),
       category: finalizeAxis(axisCat),
+      ...(axisMinistry ? { ministry: finalizeAxis(axisMinistry) } : {}),
     },
     laws,
     meta: {
@@ -154,7 +164,9 @@ function main() {
       laws_missing_revision_data: missingRev,
       laws_missing_category: missingCat,
       law_type_labels: LAW_TYPE_LABELS,
-      note_ministry: "所管府省(ministry)軸は外部マッピング未整備のため未収録",
+      note_ministry: axisMinistry
+        ? "所管府省は推定値（発令省庁・事項別分類・AIによる第一次推定。data/ministry.json）"
+        : "所管府省(ministry)軸は外部マッピング未整備のため未収録",
     },
   };
 
@@ -163,7 +175,7 @@ function main() {
   const kb = (fs.statSync(OUT_PATH).size / 1024).toFixed(1);
   console.log(`生成: ${path.relative(process.cwd(), OUT_PATH)} (${kb} KB)`);
   console.log(`  法令 ${master.laws.length} 件 / 改正履歴あり ${withRev} / 分類欠損 ${missingCat}`);
-  console.log(`  軸[法令種別] ${out.axes.law_type.groups.length} 区分 / 軸[事項別分類] ${out.axes.category.groups.length} 区分`);
+  console.log(`  軸[法令種別] ${out.axes.law_type.groups.length} 区分 / 軸[事項別分類] ${out.axes.category.groups.length} 区分${axisMinistry ? ` / 軸[所管府省] ${out.axes.ministry.groups.length} 区分` : ""}`);
   console.log("  事項別分類トップ5:");
   for (const g of out.axes.category.groups.slice(0, 5)) {
     console.log(`    - ${g.label}　法令${g.law_count} / 改正計${g.total}`);
