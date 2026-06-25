@@ -115,6 +115,20 @@ gh api repos/finoject/finoject-egov-heatmap/pages/builds/latest --jq '{status,co
   - 全件の正しい色を出すには `npm run build:all` を実行してください。
 - `meta.laws_missing_revision_data` に改正履歴未取得の件数が入ります。
 
+## AI参考解説（① 時代相キャプション）
+
+セルをクリックすると、右パネル冒頭に「💡 AI参考解説」（Claude Haiku が**実データを根拠に**生成した1文解説）を表示。閲覧者ごとのAPI呼び出しはゼロ＝**事前生成（オフライン焼き込み）**方式で、コスト・安全性ともに最小。
+
+```bash
+# 認証は環境変数（リポジトリにキーは保存しない）
+$env:ANTHROPIC_API_KEY = "sk-ant-..."          # PowerShell（その場限り）
+node batch/insights.js --n 10                   # ← npm.ps1 が実行ポリシーで止まる環境では node 直実行
+node batch/insights.js --n 10 --dry             # APIを呼ばず対象とプロンプトのみ確認（キー不要）
+```
+- 出力 `data/insights.json`（`{axis|group|periodStart: {caption,...}}`）をフロントが読む。`sample:true` の間は「（サンプル）」表示。
+- 根拠（実改正回数・実在する法令名）をプロンプトに渡し、創作を禁止＋「AI生成の参考」ラベルで明示（ハルシネーション対策）。
+- 第2弾候補: ③古い法令名の平易化／④所管府省の第一次推定／⑤見どころ自動抽出（同じオフライン方式で拡張可能）。
+
 ## 分野軸（仕様書 §2 / 第2弾）
 
 上部バーの「分野軸」で切替:
